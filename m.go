@@ -1,10 +1,11 @@
 package main
-
+//M字存法 省記憶體
 import (
 	"fmt"
 	"math"
 	"time"
 	"sync"
+	"runtime"
 )
 
 var optionPrice []float64
@@ -12,6 +13,20 @@ var last_layer_num []float64
 var last_layer_num_temporary []float64
 var triangle_block_size int
 var rhombus_block_size int
+
+func printMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// 輸出目前分配的記憶體，單位是MB
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
 
 func stencilTriangle(u, d, p, S, K, r, T float64, N int, depth int, start_position int, num_of_tri int) {
 	var now_position int = start_position
@@ -165,6 +180,7 @@ func americanOptionPrice(S, K, r, q, sigma, T float64, N int, depth int) {
 	d := math.Exp((r-q)*dt - sigma*math.Sqrt(dt))
 	p := (math.Exp((r-q)*dt) - d) / (u - d)
 
+	startTime := time.Now()
 	var wg sync.WaitGroup
 	for i := 0 ; i <= triangle_block_size * ((N / depth) - 1); i += triangle_block_size  {
 		wg.Add(1)
@@ -174,6 +190,10 @@ func americanOptionPrice(S, K, r, q, sigma, T float64, N int, depth int) {
 		}(i)
 	}
 	wg.Wait()
+
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
+	fmt.Printf("Triangle time: %v seconds\n", duration.Seconds())
 
 	row := N / depth - 1 //從倒數第二層開始
 	for i := 0; i < N/depth - 1; i++ {
@@ -192,7 +212,7 @@ func americanOptionPrice(S, K, r, q, sigma, T float64, N int, depth int) {
 		}
 		row--
 	}
-
+	printMemUsage() 
 
 
 }
@@ -206,21 +226,24 @@ func main() {
 	q := 0.12  // 股利率
 	sigma := 0.2
 
-	depth := 250
+	depth := 25
 
 
+	fmt.Printf("Depth: %v\n", depth)
 
 	
+	startTime := time.Now()
 
 	triangle_block_size = (depth * (depth + 1)) / 2
 	rhombus_block_size = depth * depth
 	optionPrice = make([]float64, (N / depth -1)* rhombus_block_size) //開最大的大小是第二層菱形的大小
 	last_layer_num = make([]float64, (N /depth) * 2 * depth) //用來存M字的那邊數字
 	last_layer_num_temporary = make([]float64, (N /depth) * 2 * depth) //用來暫存菱形的M字
+	printMemUsage() 
 	
-	fmt.Printf("Depth: %v\n", depth)
-	for i :=0; i < 3; i++{
-	startTime := time.Now()
+	
+	
+	
 	americanOptionPrice(S, K, r, q, sigma, T, N, depth)
 	endTime := time.Now()
 	duration := endTime.Sub(startTime)
@@ -228,5 +251,5 @@ func main() {
 
 	fmt.Printf("American put option price: %.6f\n", optionPrice[rhombus_block_size-1])
 	fmt.Printf("Total execution time: %v seconds\n", duration.Seconds())
-	}
+	
 }

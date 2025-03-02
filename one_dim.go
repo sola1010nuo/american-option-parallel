@@ -1,17 +1,31 @@
 package main
-
+//一維存法 減少cache miss 但一樣耗記憶體
 import (
 	"fmt"
 	"math"
 	"time"
 	"sync"
-	"github.com/tealeg/xlsx"
+	"runtime"
 )
 
-var optionPrice = make([]float64, 10000*10000)
+var N = 20000 // 樹層數
+var optionPrice = make([]float64, N*(N+1)/2)
 var triangle_block_size int
 var rhombus_block_size int
 
+func printMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// 輸出目前分配的記憶體，單位是MB
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
 
 func count_rhombus(N int, depth int, times int) int { //計算 (N / depth - 2) + (N / depth -1) + ... times次
 	var start = N / depth - 1
@@ -172,10 +186,7 @@ func stencilRhombus(u, d, p, S, K, r, T float64, N int, depth int, start_positio
 
 }
 
-func americanOptionPrice(S, K, r, q, sigma, T float64, N int, depth int, sheet *xlsx.Sheet, rowIdx int) {
-	
-	startTime := time.Now()
-
+func americanOptionPrice(S, K, r, q, sigma, T float64, N int, depth int) {
 	dt := T / float64(N)
 	u := math.Exp((r-q)*dt + sigma*math.Sqrt(dt))
 	d := math.Exp((r-q)*dt - sigma*math.Sqrt(dt))
@@ -221,11 +232,7 @@ func americanOptionPrice(S, K, r, q, sigma, T float64, N int, depth int, sheet *
 		row--
 	}
 	
-	endTime := time.Now()
-	duration := endTime.Sub(startTime).Seconds()
-	row_excel := sheet.Row(rowIdx) // 获取当前行		
-	row_excel.AddCell().SetFloat(duration)
-	fmt.Printf("Depth %v Total execution time: %v seconds\n", depth, duration)
+	printMemUsage()
 	fmt.Printf("American put option price: %.6f\n", optionPrice[N*(N+1)/2 -1])
 }
 
@@ -234,41 +241,21 @@ func main() {
 	K := 100.0 // 履約價
 	r := 0.08  // 無風險利率
 	T := 3.0   // 到期時間（年）
-	N := 10000 // 樹層數
 	q := 0.12  // 股利率
 	sigma := 0.2
 
+	depth := 25
 
-	file := xlsx.NewFile()                                      // 创建 Excel 文件
-	defer file.Save("一維存法(無刪除).xlsx")             // 在程序结束时保存文件
-	sheet, err := file.AddSheet("Time")           // 创建一个工作表
-	if err != nil {
-		fmt.Printf("Error creating sheet: %v\n", err)
-		return
-	}
 
-	headerRow := sheet.AddRow()
-	headerRow.AddCell().SetValue("layer")
 
-	rowIdx := 1 
-	for line := 2; line <= 250; line ++ { 
-		if 10000 % line == 0{
-			row := sheet.Row(rowIdx)
-			row.AddCell().SetInt(line)
-			rowIdx++
-		}
-	}
-	rowIdx = 1
-
-		for count := 0; count < 5; count++ {
-			rowIdx = 1
-			for i := 2; i <= 250; i ++ {
-				if N % i == 0{
-					triangle_block_size = (i * (i + 1)) / 2
-					rhombus_block_size = i * i
-					americanOptionPrice(S, K, r, q, sigma, T, N, i, sheet, rowIdx)
-					rowIdx++ // 递增行索引
-				}
-			}
-		}
-	}
+	printMemUsage()
+	startTime := time.Now()
+	triangle_block_size = (depth * (depth + 1)) / 2
+	rhombus_block_size = depth * depth
+	
+	americanOptionPrice(S, K, r, q, sigma, T, N, depth)
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
+	fmt.Printf("Total execution time: %v seconds\n", duration.Seconds())
+	
+}
